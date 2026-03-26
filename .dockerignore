@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+dist/
+
+# Node
+caption-app/node_modules/
+caption-app/.env.local
+caption-app/.env.development.local
+
+# Go
+*.test
+
+# ML artifacts (add model weights separately or use HF Hub)
+*.pth
+*.pt
+*.h5
+*.ckpt
+
+# Dev/OS noise
+.git/
+.DS_Store
+*.log
