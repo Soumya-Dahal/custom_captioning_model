@@ -27,6 +27,24 @@ logger.info(f"Using device: {device}")
 # Path to best_model.pt in project checkpoints directory
 CHECKPOINT_PATH = Path(__file__).resolve().parent / "checkpoints" / "best_model.pt"
 
+# ── Auto-download weights from HuggingFace Hub if not present ──────
+if not CHECKPOINT_PATH.exists():
+    logger.info("Checkpoint not found locally. Downloading from HuggingFace Hub...")
+    try:
+        from huggingface_hub import hf_hub_download
+        CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        hf_hub_download(
+            repo_id="Niteshkamat/image-caption-weights",
+            filename="checkpoints/best_model.pt",
+            local_dir=str(CHECKPOINT_PATH.parent.parent),
+            local_dir_use_symlinks=False,
+        )
+        logger.info("Model weights downloaded successfully.")
+    except Exception as e:
+        logger.error(f"Failed to download model weights: {e}")
+        raise
+# ───────────────────────────────────────────────────────────────────
+
 # Same image preprocessing as training/inference (EfficientNet / ImageNet, 224x224)
 image_transform = transforms.Compose([
     transforms.Resize((224, 224)),

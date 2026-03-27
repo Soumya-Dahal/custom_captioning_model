@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"time"
@@ -16,7 +15,7 @@ import (
 const (
 	pythonServiceURL = "http://localhost:8000/caption"
 	maxRequestSize   = 10 << 20 // 10MB
-	requestTimeout   = 30 * time.Second
+	requestTimeout   = 45 * time.Second
 )
 
 type ImageRequest struct {
@@ -28,144 +27,77 @@ type CaptionResponse struct {
 	Caption string `json:"caption"`
 }
 
-type ErrorResponse struct {
-	Error string `json:"error"`
-}
-
-// Custom CORS middleware
-func CORSMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
-
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
-
-		c.Next()
-	}
-}
-
 func main() {
+	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 
-	// Use custom CORS middleware
-	r.Use(CORSMiddleware())
+	// 1. Serve Static Files (The React Build)
+	r.Static("/static", "./static/static")
+	r.StaticFile("/favicon.ico", "./static/favicon.ico")
+	r.StaticFile("/manifest.json", "./static/manifest.json")
+	r.StaticFile("/logo192.png", "./static/logo192.png")
 
-	// Limit request body size
-	r.Use(func(c *gin.Context) {
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxRequestSize)
-		c.Next()
+	// 2. Health Check
+	r.GET("/api/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "healthy"})
 	})
 
-	// Health check endpoint
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
-	})
-
+	// 3. Image Processing Proxy
 	r.POST("/process", func(c *gin.Context) {
 		var req ImageRequest
-		
-		// Bind and validate JSON
 		if err := c.ShouldBindJSON(&req); err != nil {
-			log.Printf("Invalid request: %v", err)
-			c.JSON(http.StatusBadRequest, ErrorResponse{
-				Error: "Invalid request format",
-			})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
 			return
 		}
 
-		// Basic validation
-		if len(req.ImageBase64) == 0 {
-			c.JSON(http.StatusBadRequest, ErrorResponse{
-				Error: "image_base64 is required",
-			})
-			return
-		}
-		if req.CaptionMode == "" {
-			req.CaptionMode = "consistent"
-		}
-
-		log.Printf("Processing image request (size: %d bytes)", len(req.ImageBase64))
-
-		// Call Python FastAPI service with timeout
 		caption, err := getCaptionFromPython(req)
 		if err != nil {
-			log.Printf("Caption service error: %v", err)
-			c.JSON(http.StatusInternalServerError, ErrorResponse{
-				Error: "Failed to generate caption",
-			})
+			log.Printf("Python API Error: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "AI model failed to respond"})
 			return
 		}
 
-		// Return caption
-		if caption == "" {
-			caption = "No caption generated"
-		}
-		
-		log.Printf("Successfully generated caption: %s", caption)
 		c.JSON(http.StatusOK, gin.H{"caption": caption})
 	})
 
-	log.Println("Starting server on :8080")
-	if err := r.Run(":8080"); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
-	}
+	// 4. Default Route (Serves React App for all other paths)
+	r.NoRoute(func(c *gin.Context) {
+		c.File("./static/index.html")
+	})
+
+	log.Println("Server running on port 7860")
+	r.Run(":7860")
 }
 
 func getCaptionFromPython(req ImageRequest) (string, error) {
-	// Create request body using proper JSON marshaling
-	requestBody, err := json.Marshal(req)
+	body, err := json.Marshal(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
+		return "", err
 	}
 
-	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
 	defer cancel()
 
-	// Create HTTP request
-	httpReq, err := http.NewRequestWithContext(
-		ctx,
-		"POST",
-		pythonServiceURL,
-		bytes.NewBuffer(requestBody),
-	)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", pythonServiceURL, bytes.NewBuffer(body))
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return "", err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	// Make request
-	client := &http.Client{
-		Timeout: requestTimeout,
-	}
+	client := &http.Client{}
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return "", fmt.Errorf("request failed: %w", err)
+		return "", err
 	}
 	defer resp.Body.Close()
 
-	// Check status code
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("python service returned %d: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("python service returned status %d", resp.StatusCode)
 	}
 
-	// Read response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
+	var res CaptionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return "", err
 	}
-
-	// Parse response
-	var captionResp CaptionResponse
-	if err := json.Unmarshal(body, &captionResp); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	return captionResp.Caption, nil
+	return res.Caption, nil
 }

@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+
+  # ── Python ML inference API ──────────────────────────────────────
+  python-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.python   # see below for this file
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app.py:/app/app.py
+      - ./inference.py:/app/inference.py
+      - ./cnn_encoder_decoder_captioning.py:/app/cnn_encoder_decoder_captioning.py
+      # Mount your trained model weights if stored locally:
+      # - ./models:/app/models
+    environment:
+      - PORT=8000
+    restart: unless-stopped
+
+  # ── Go web server ─────────────────────────────────────────────────
+  go-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.goserver        # see below for this file
+    ports:
+      - "7860:7860"
+    environment:
+      - PORT=7860
+      - PYTHON_API_URL=http://python-api:8000
+      - STATIC_DIR=/app/static
+    depends_on:
+      - python-api
+    restart: unless-stopped
+
+  # ── React frontend (dev mode only) ───────────────────────────────
+  react-dev:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./caption-app:/app
+    ports:
+      - "3000:3000"
+    command: sh -c "npm install && npm start"
+    environment:
+      - REACT_APP_API_URL=http://localhost:7860
+    profiles:
+      - dev   # only starts with: docker compose --profile dev up

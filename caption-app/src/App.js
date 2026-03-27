@@ -37,14 +37,14 @@ function App() {
 
     try {
       const response = await axios.post(
-        'http://localhost:8080/process',
+        '/process',
         {
           image_base64: imageBase64,
           caption_mode: captionMode,
         },
         { 
           signal: abortControllerRef.current.signal,
-          timeout: 10000
+          timeout: 450000
         }
       );
 
@@ -278,3 +278,4 @@ function App() {
 }
 
 export default App;
+
