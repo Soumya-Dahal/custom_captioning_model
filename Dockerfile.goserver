@@ -1,0 +1,20 @@
+FROM golang:1.22-alpine AS builder
+
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY *.go ./
+RUN go build -o server .
+
+# ── Copy React build into Go image ──────────────────────────────────
+# Build React separately and copy:
+#   docker build -t react-build --target react-build -f Dockerfile .
+# Or point STATIC_DIR to a volume mount in docker-compose.yml
+FROM alpine:3.19
+WORKDIR /app
+COPY --from=builder /app/server ./server
+RUN chmod +x ./server
+
+EXPOSE 7860
+CMD ["./server"]
