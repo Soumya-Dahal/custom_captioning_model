@@ -55,9 +55,7 @@ COPY --from=react-builder /app/caption-app/build ./static
 # Copy supervisord config
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-COPY checkpoints/ /app/checkpoints/
 
-RUN chmod -R 755 /app/checkpoints
 
 # HuggingFace Spaces requires port 7860
 EXPOSE 7860
