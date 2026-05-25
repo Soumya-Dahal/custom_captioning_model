@@ -227,3 +227,6 @@ Checkpoints contain: `model_state_dict`, `config` (model hyperparameters), `epoc
 - COCO: [cocodataset.org](https://cocodataset.org/)
 - Karpathy split: commonly used with [coco-caption](https://github.com/tylin/coco-caption); train+restval ≈ 113k images, 5 captions each.
 - Metrics: BLEU-4, CIDEr (see coco-caption and related papers).
+
+## Find the trained model here:
+https://huggingface.co/Soumya-Dahal/image-captioning-CNN-plus-Transformer
